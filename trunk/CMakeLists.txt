@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 2.4.6)
+include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+
+# Set the build type.  Options are:
+#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
+#  Debug          : w/ debug symbols, w/o optimization
+#  Release        : w/o debug symbols, w/ optimization
+#  RelWithDebInfo : w/ debug symbols, w/ optimization
+#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
+#set(ROS_BUILD_TYPE RelWithDebInfo)
+
+rosbuild_init()
+
+#set the default path for built executables to the "bin" directory
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
+#set the default path for built libraries to the "lib" directory
+set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+
+#uncomment if you have defined messages
+rosbuild_genmsg()
+#uncomment if you have defined services
+#rosbuild_gensrv()
+
+include_directories(/usr/include/vtk-5.6)
+# link_directories(/usr/lib/vtk-5.6 /usr/lib)
+
+#common commands for building c++ executables and libraries
+#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
+#target_link_libraries(${PROJECT_NAME} another_library)
+#rosbuild_add_boost_directories()
+#rosbuild_link_boost(${PROJECT_NAME} thread)
+#rosbuild_add_executable(example examples/example.cpp)
+#target_link_libraries(example ${PROJECT_NAME})
+# rosbuild_add_executable(example src/example.cpp)
+# rosbuild_add_executable(registration src/registration.cpp)
+# rosbuild_add_executable(captureRegisteredFrames src/captureRegisteredFrames.cpp)
+# rosbuild_add_executable(pclVisualizerDemo src/pclVisualizerDemo.cpp)
+# target_link_libraries(registration /usr/lib/libvtkFiltering.so.5.6)
+# rosbuild_add_executable(triangulation src/triangulation.cpp)
+# rosbuild_add_executable(smoothing src/smoothing.cpp)
+# rosbuild_add_executable(correspondence_grouping src/correspondence_grouping.cpp)
+# rosbuild_add_executable(range_image_border_extraction src/range_image_border_extraction.cpp)
+# rosbuild_add_executable(narf_feature_extraction src/narf_feature_extraction.cpp)
+# rosbuild_add_executable(greedy_projection src/greedy_projection.cpp)
+# rosbuild_add_executable(planar_segmentation src/planar_segmentation.cpp)
+# rosbuild_add_executable(kinect_planes src/kinect_planes.cpp)
+# rosbuild_add_executable(cluster_extraction src/cluster_extraction.cpp)
+# rosbuild_add_executable(getGroundPlaneOld src/getGroundPlaneOld.cpp)
+# rosbuild_add_executable(floorAndWalls src/floorAndWalls.cpp)
+# rosbuild_add_executable(trackGroundPlane src/trackGroundPlane.cpp)
+rosbuild_add_executable(trackGroundPlaneWithoutRANSAC src/trackGroundPlaneWithoutRANSAC.cpp)
