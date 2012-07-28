@@ -6,8 +6,6 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include <pcl/visualization/pcl_visualizer.h>
-
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
@@ -31,7 +29,10 @@ float EPS_ANGLE = 0.2;
 int SEG_METHOD_TYPE = pcl::SAC_RANSAC;
 float DISTANCE_THRESHOLD = 0.03;
 int groundColor[] = {255,0,0};
-int MIN_CLOUD_SIZE = 2000;
+unsigned int MIN_CLOUD_SIZE = 2000;
+float HEIGHT_MIN = 0.1f;
+float HEIGHT_MAX = 1.0f;
+float HEIGHT_STEP = 0.1f;
 
 typedef pcl::PointXYZRGB CloudPointType;
 typedef pcl::PointCloud<CloudPointType> RGBCloud;
@@ -44,7 +45,12 @@ ros::Publisher groundPlaneCoeffPublisher;
 
 char name[30];
 bool groundPlaneFound = false;
-float groundPlaneCoeff[4],EPS[4];
+bool groundPlaneInitialized = false;
+float groundPlaneCoeff[] = {0.0,-1.0,0.0,0.5};
+float EPS[] = {0.02,0.02,0.02,0.2};
+int MAX_ITER = 100;
+
+void printGroundPlaneCoefficients();
 
 bool isAtRequiredDepth(pcl::ModelCoefficients::Ptr coefficients)
 {
@@ -53,7 +59,7 @@ bool isAtRequiredDepth(pcl::ModelCoefficients::Ptr coefficients)
 
 bool isValidGroundPlane(pcl::ModelCoefficients::Ptr coefficients)
 {
-  return (abs(coefficients->values[0]-groundPlaneCoeff[0])<EPS[0]) && (abs(coefficients->values[1]-groundPlaneCoeff[1])<EPS[1]) && (abs(coefficients->values[2]-groundPlaneCoeff[2])<EPS[2]) && isAtRequiredDepth(coefficients);
+  return (abs(coefficients->values[0]-groundPlaneCoeff[0])<EPS[0]) && (abs(coefficients->values[1]-groundPlaneCoeff[1])<EPS[1]) && (abs(coefficients->values[2]-groundPlaneCoeff[2])<EPS[2])/* && isAtRequiredDepth(coefficients)*/;
 }
 
 void genNormalsCloud(RGBCloudPtr cloud, NormalsCloudPtr cloudNormals)
@@ -97,81 +103,78 @@ void populateIndices(pcl::IndicesPtr indices, int size)
     indices->push_back(i);
   }
 }
-RGBCloudPtr searchGroundPlane(RGBCloudPtr cloud)
+bool searchGroundPlane(RGBCloudPtr cloud)
 {
-  // Additional accuracy can be achieved using SACSegmentationFromNormals
-//   NormalsCloudPtr cloudNormals(new NormalsCloud);
-//   printf("##Normals Gen\n");
-  
   RGBCloudPtr cloudCopy(new RGBCloud(*cloud));
 //   genNormalsCloud(cloudCopy, cloudNormals);
-  RGBCloudPtr ground(new RGBCloud);
+//   RGBCloudPtr ground(new RGBCloud);
   
   pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
   
   // Create the segmentation object
   pcl::SACSegmentation<CloudPointType> seg;
-//   pcl::SACSegmentationFromNormals<CloudPointType,pcl::Normal> seg;
-//   pcl::IndicesPtr indices(new vector<int>());
-//   populateIndices(indices,cloud->points.size());
-  
-//   printf("IndicesSize:%d CloudSize:%d",indices->size(),cloud->points.size());
-  
   seg.setOptimizeCoefficients (true);
+  seg.setMaxIterations (MAX_ITER);
   seg.setModelType (pcl::SACMODEL_PLANE);
-//   seg.setModelType (pcl::SACMODEL_PLANE);
-  // Using the previous estimate of ground plane
-//   const Eigen::Vector3f y(groundPlaneCoeff[0],groundPlaneCoeff[1],groundPlaneCoeff[2]);
-//   seg.setAxis(y);
-//   seg.setEpsAngle(EPS_ANGLE);
   seg.setMethodType (SEG_METHOD_TYPE);
   seg.setDistanceThreshold(DISTANCE_THRESHOLD);
-  do{
-    seg.setInputCloud ((*cloudCopy).makeShared ());
-//     seg.setInputNormals(cloudNormals);
-//     seg.setIndices(indices);
-    seg.segment (*inliers, *coefficients);
+  
+  // Iterating over height values
+  float height = HEIGHT_MIN;
+  unsigned int maxInliers = 0;
+  float newCoefficients[4];
+  
+  while(height<=HEIGHT_MAX)
+  {
+    RGBCloudPtr cloudCopy(new RGBCloud(*cloud));
+    groundPlaneCoeff[3] = height;
+    printf("##Height:%f ::",height);
+    do{
+      seg.setInputCloud ((*cloudCopy).makeShared ());
+      seg.segment (*inliers, *coefficients);
 
-    if (inliers->indices.size () == 0)
-    {
-      PCL_ERROR ("##GROUND PLANE NOT FOUND##");
-      groundPlaneFound = false;
-      return ground;
-    }
-
-//     int coeffCount = coefficients->values.size();
-//     cerr<< "Coefficients: "<< coeffCount<<endl;
-//     for(int i=0;i<coeffCount;i++)
-//     {
-//       cerr << coefficients->values[i] << std::endl;
-//     }
-//     cerr << "Model inliers: " << inliers->indices.size () << endl;
-    
-    pcl::ExtractIndices<pcl::PointXYZRGB> extract;
-    extract.setInputCloud (cloudCopy);
-    extract.setIndices (inliers);
-    
-    if(isValidGroundPlane(coefficients))
-    {
-      updateGroundPlaneCoeff(coefficients->values[0],coefficients->values[1],coefficients->values[2],coefficients->values[3]);
-      groundPlaneFound = true;
-      extract.setNegative (false);
-      extract.filter(*ground);
-      return ground;
-    }
-    RGBCloudPtr newCloud(new RGBCloud());
-    extract.setNegative (true);
-    extract.filter (*newCloud);
-    cloudCopy = newCloud;
-//     genNormalsCloud(cloudCopy, cloudNormals);
-//     updateIndices(indices,inliers);
-  }while(1);
+      if (inliers->indices.size () == 0)
+      {
+	height+=HEIGHT_STEP;
+	printf("FAILED##\n");
+	break;
+      }
+      
+      pcl::ExtractIndices<pcl::PointXYZRGB> extract;
+      extract.setInputCloud (cloudCopy);
+      extract.setIndices (inliers);
+      
+      if(isValidGroundPlane(coefficients))
+      {
+	printf("SUCCESS::%d inliers##\n",inliers->indices.size());
+	if(inliers->indices.size()>maxInliers)
+	{
+	  groundPlaneInitialized = true;
+	  newCoefficients[0] = coefficients->values[0];
+	  newCoefficients[1] = coefficients->values[1];
+	  newCoefficients[2] = coefficients->values[2];
+	  newCoefficients[3] = coefficients->values[3];
+	}
+	height+=HEIGHT_STEP;
+	break;
+      }
+      RGBCloudPtr newCloud(new RGBCloud());
+      extract.setNegative (true);
+      extract.filter (*newCloud);
+      cloudCopy = newCloud;
+    }while(1);
+  }
+  if(groundPlaneInitialized)
+  {
+    updateGroundPlaneCoeff(newCoefficients[0],newCoefficients[1],newCoefficients[2],newCoefficients[3]);
+  }
+  return groundPlaneInitialized;
 }
 float getDistFromPlane(CloudPointType p, float coeff[])
 {
   float res = 0.0;
-  res = coeff[0]*p.x + coeff[1]*p.y + coeff[2]*p.z - coeff[3];
+  res = coeff[0]*p.x + coeff[1]*p.y + coeff[2]*p.z + coeff[3];
   res/=sqrt(coeff[0]*coeff[0] + coeff[1]*coeff[1] + coeff[2]*coeff[2]);
   return abs(res);
 }
@@ -187,7 +190,7 @@ pcl::PointIndices::Ptr searchGroundPlaneWithoutRANSAC(RGBCloudPtr cloud)
       inliers->indices.push_back(i);
     }
   }
-  printf("Inliers:%d\n",inliers->indices.size());
+//   printf("Inliers:%d\n",inliers->indices.size());
   if(inliers->indices.size()>=MIN_CLOUD_SIZE)
     groundPlaneFound = true;
   else
@@ -225,24 +228,27 @@ void cloud_cb (const sensor_msgs::PointCloud2& input)
   
   pcl::PointIndices::Ptr inliers;
   
-  if(!groundPlaneFound)
+  if(!groundPlaneInitialized)
   {
-    inliers = searchGroundPlaneWithoutRANSAC(cloud);
-    if(groundPlaneFound)
+    if(searchGroundPlane(cloud))
     {
-      printf("##Ground Plane Found##\n");
-      printf("Inliers:%d\n",inliers->indices.size());
-//       printGroundPlaneCoefficients();
+      printf("##Ground Plane Successfully Initialized##\n");
+//       printf("Inliers:%d\n",inliers->indices.size());
+      printGroundPlaneCoefficients();
+      return;
     }
     else
+    {
+      PCL_ERROR("##Ground Plane Not Found::Re-orient Camera parallel to ground##\n");
       return;
+    }
   }
   else
   {
     inliers = searchGroundPlaneWithoutRANSAC(cloud);
     if(!groundPlaneFound)
     {
-      printf("##Ground Plane Lost##\n");
+      PCL_ERROR("##Ground Plane Lost##\n");
       return;
     }
   }
@@ -253,11 +259,11 @@ void cloud_cb (const sensor_msgs::PointCloud2& input)
 
 void printHelp()
 {
-  printf("Usage: <executable> <a> <b> <c> <d> <DISTANCE_THRESHOLD> <MIN_CLOUD_SIZE>\n");
+  printf("Usage: <executable> <a> <b> <c> <EPS_a> <EPS_b> <EPS_c> <EPS_d> <HEIGHT_MIN> <HEIGHT_MAX> <HEIGHT_STEP> <DISTANCE_THRESHOLD> <MIN_CLOUD_SIZE> <MAX_ITER>\n");
 }
 void input(int argc, char** argv)
 {
-  if(argc!=7)
+  if(argc!=14)
   {
     printHelp();
     exit(0);
@@ -266,9 +272,16 @@ void input(int argc, char** argv)
   sscanf(argv[++next],"%f",&groundPlaneCoeff[0]);
   sscanf(argv[++next],"%f",&groundPlaneCoeff[1]);
   sscanf(argv[++next],"%f",&groundPlaneCoeff[2]);
-  sscanf(argv[++next],"%f",&groundPlaneCoeff[3]);
+  sscanf(argv[++next],"%f",&EPS[0]);
+  sscanf(argv[++next],"%f",&EPS[1]);
+  sscanf(argv[++next],"%f",&EPS[2]);
+  sscanf(argv[++next],"%f",&EPS[3]);
+  sscanf(argv[++next],"%f",&HEIGHT_MIN);
+  sscanf(argv[++next],"%f",&HEIGHT_MAX);
+  sscanf(argv[++next],"%f",&HEIGHT_STEP);
   sscanf(argv[++next],"%f",&DISTANCE_THRESHOLD);
   sscanf(argv[++next],"%d",&MIN_CLOUD_SIZE);
+  sscanf(argv[++next],"%d",&MAX_ITER);
 }
 int
 main (int argc, char** argv)
