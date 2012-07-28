@@ -31,6 +31,7 @@ float EPS_ANGLE = 0.2;
 int SEG_METHOD_TYPE = pcl::SAC_RANSAC;
 float DISTANCE_THRESHOLD = 0.03;
 int groundColor[] = {255,0,0};
+int MAX_ITER = 100;
 
 typedef pcl::PointXYZRGB CloudPointType;
 typedef pcl::PointCloud<CloudPointType> RGBCloud;
@@ -119,6 +120,7 @@ RGBCloudPtr searchGroundPlane(RGBCloudPtr cloud)
   
   seg.setOptimizeCoefficients (true);
   seg.setModelType (pcl::SACMODEL_PLANE);
+  seg.setMaxIterations (MAX_ITER);
 //   seg.setModelType (pcl::SACMODEL_PLANE);
   // Using the previous estimate of ground plane
 //   const Eigen::Vector3f y(groundPlaneCoeff[0],groundPlaneCoeff[1],groundPlaneCoeff[2]);
@@ -225,7 +227,7 @@ void printHelp()
 }
 void input(int argc, char** argv)
 {
-  if(argc!=10)
+  if(argc!=11)
   {
     printHelp();
     exit(0);
@@ -240,6 +242,7 @@ void input(int argc, char** argv)
   sscanf(argv[++next],"%f",&EPS[2]);
   sscanf(argv[++next],"%f",&EPS[3]);
   sscanf(argv[++next],"%f",&DISTANCE_THRESHOLD);
+  sscanf(argv[++next],"%d",&MAX_ITER);
 }
 int
 main (int argc, char** argv)
